@@ -5,7 +5,7 @@ A secure, local web-based application for predicting ship fuel consumption and C
 ---
 
 ## 🔐 Password Protection
-This app requires login credentials via `secrets.toml` to run. Only authenticated users may access the main prediction interface.
+This app is protected with a login system using `.streamlit/secrets.toml`. If you are a collaborator or evaluator and need access credentials (username and password), please contact the creator directly.
 
 ---
 
@@ -27,7 +27,7 @@ co2-fuel-predictor/
 
 ---
 
-## 💻 Option 1: Run Locally (Recommended for Private Use)
+## 💻 Run Locally (Recommended)
 
 ### 1. Clone the Repository
 ```bash
@@ -35,7 +35,7 @@ git clone https://github.com/hsmotlagh/co2-fuel-predictor.git
 cd co2-fuel-predictor
 ```
 
-### 2. Create Virtual Environment
+### 2. Create a Virtual Environment
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -47,10 +47,12 @@ pip install -r requirements.txt
 ```
 
 ### 4. Create Secrets File
-Create the file `.streamlit/secrets.toml`:
+Create the file `.streamlit/secrets.toml` and enter the credentials provided to you:
 ```toml
 [auth]
-password = "co2app2025"
+username = "your-username"
+password = "your-password"
+# contact me for username and password
 ```
 
 ### 5. Run the App
@@ -59,7 +61,7 @@ streamlit run app.py
 ```
 
 ### 6. Open in Browser
-Once launched, a browser tab will open. Enter the password to access the interface.
+Once launched, a browser tab will open. Enter your username and password to access the interface.
 
 ---
 
