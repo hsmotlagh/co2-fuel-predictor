@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pkl
+*.xlsx
+.DS_Store
+*.docx
+.streamlit/secrets.toml
