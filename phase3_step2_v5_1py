@@ -1,0 +1,191 @@
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+import os
+
+# Load the dataset (assuming final results are loaded from a previous step)
+file_path = '/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/final results.xlsx'
+
+# Print the file path to verify its correctness
+print(f"Attempting to load the file from: {file_path}")
+
+# Check if the file exists before attempting to load
+if not os.path.exists(file_path):
+    raise FileNotFoundError(f"The file at {file_path} was not found. Please verify the file path.")
+
+# Load all scenario sheets into separate DataFrames
+sheets = ['Original Scenar_Coeff', 'Paint (5%) Scen_Coeff', 'Advance Propell_Coeff', 'Fin (2%-4%) Sce_Coeff', 'Bulbous Bow Sce_Coeff']
+final_results = pd.read_excel(file_path, sheet_name=sheets)
+
+# Selecting relevant features and target for the Original Scenario
+original_scenario = final_results['Original Scenar_Coeff']
+features = [
+    'Delivered Power (Pd) (kW)', 'T (kN)', 'Hull Efficiency (ηH)', 
+    'Propeller Open Water Efficiency (ηO)', 'Brake Power (PB) (kW)'
+]
+target_fc = 'Fuel Consumption (FC) (kg/h)'
+target_co2 = 'CO2 Emission (kg)'
+
+X = original_scenario[features]
+y_fc = original_scenario[target_fc]
+y_co2 = original_scenario[target_co2]
+
+# Split the data into training and testing sets
+X_train, X_test, y_fc_train, y_fc_test = train_test_split(X, y_fc, test_size=0.2, random_state=42)
+X_train, X_test, y_co2_train, y_co2_test = train_test_split(X, y_co2, test_size=0.2, random_state=42)
+
+# Standardize the features
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Step 1: Monte Carlo Simulation for Dataset Extension
+num_simulations = 1000
+X_augmented = []
+y_fc_augmented = []
+y_co2_augmented = []
+
+np.random.seed(42)
+for i in range(num_simulations):
+    X_noise = X_train + np.random.normal(0, 0.05, X_train.shape)
+    X_augmented.append(X_noise)
+    y_fc_augmented.append(y_fc_train.values)
+    y_co2_augmented.append(y_co2_train.values)
+
+X_augmented = np.vstack(X_augmented)
+y_fc_augmented = np.hstack(y_fc_augmented)
+y_co2_augmented = np.hstack(y_co2_augmented)
+
+# Standardize the augmented features
+X_augmented_scaled = scaler.fit_transform(X_augmented)
+
+# Step 2: Model Re-training with Augmented Dataset
+models = {
+    'SVR': GridSearchCV(SVR(), param_grid={
+                'kernel': ['rbf'],
+                'C': [0.1, 1, 10],
+                'epsilon': [0.01, 0.1, 0.5]
+            }, cv=5),
+    'RandomForest': GridSearchCV(RandomForestRegressor(random_state=42), param_grid={
+                'n_estimators': [100, 200, 300],
+                'max_depth': [None, 10, 20]
+            }, cv=5),
+    'XGBoost': GridSearchCV(XGBRegressor(random_state=42), param_grid={
+                'n_estimators': [50, 100, 200],
+                'learning_rate': [0.01, 0.1, 0.2]
+            }, cv=5),
+    'ShallowNN': GridSearchCV(MLPRegressor(max_iter=1000, random_state=42), param_grid={
+                'hidden_layer_sizes': [(50,), (100,), (50, 50)],
+                'alpha': [0.0001, 0.001, 0.01]
+            }, cv=5)
+}
+
+# Train and evaluate each model using the augmented dataset
+results_augmented = {}
+residuals_augmented = {'fuel_consumption': {}, 'co2_emission': {}}
+feature_importances_augmented = {}
+for name, model in models.items():
+    model.fit(X_augmented_scaled, y_fc_augmented)
+    y_fc_pred = model.predict(X_test_scaled)
+    fc_mae = mean_absolute_error(y_fc_test, y_fc_pred)
+    fc_rmse = mean_squared_error(y_fc_test, y_fc_pred, squared=False)
+    best_params_fc = model.best_params_
+    
+    residuals_augmented['fuel_consumption'][name] = y_fc_test - y_fc_pred
+    
+    model.fit(X_augmented_scaled, y_co2_augmented)
+    y_co2_pred = model.predict(X_test_scaled)
+    co2_mae = mean_absolute_error(y_co2_test, y_co2_pred)
+    co2_rmse = mean_squared_error(y_co2_test, y_co2_pred, squared=False)
+    best_params_co2 = model.best_params_
+    
+    residuals_augmented['co2_emission'][name] = y_co2_test - y_co2_pred
+    
+    if name in ['RandomForest', 'XGBoost']:
+        feature_importances_augmented[name] = model.best_estimator_.feature_importances_
+    
+    results_augmented[name] = {
+        'Fuel Consumption MAE': fc_mae,
+        'Fuel Consumption RMSE': fc_rmse,
+        'Fuel Consumption Best Params': best_params_fc,
+        'CO2 Emission MAE': co2_mae,
+        'CO2 Emission RMSE': co2_rmse,
+        'CO2 Emission Best Params': best_params_co2
+    }
+
+# Step 3: Uncertainty Quantification
+predictions_fc = []
+predictions_co2 = []
+for i in range(num_simulations):
+    X_test_noise = X_test + np.random.normal(0, 0.05, X_test.shape)
+    X_test_noise_scaled = scaler.transform(X_test_noise)
+    predictions_fc.append(models['RandomForest'].predict(X_test_noise_scaled))
+    predictions_co2.append(models['RandomForest'].predict(X_test_noise_scaled))
+
+predictions_fc = np.array(predictions_fc)
+predictions_co2 = np.array(predictions_co2)
+
+mean_fc = np.mean(predictions_fc, axis=0)
+std_fc = np.std(predictions_fc, axis=0)
+mean_co2 = np.mean(predictions_co2, axis=0)
+std_co2 = np.std(predictions_co2, axis=0)
+
+plt.figure(figsize=(12, 6))
+plt.errorbar(range(len(mean_fc)), mean_fc, yerr=std_fc, fmt='o', ecolor='red', capsize=5, label='Uncertainty')
+plt.xlabel('Test Sample Index')
+plt.ylabel('Fuel Consumption (kg/h)')
+plt.title('Fuel Consumption Prediction with Uncertainty Quantification')
+plt.legend()
+plt.tight_layout()
+plt.savefig('/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/MSE_MLs_results/fc_uncertainty.png')
+plt.show()
+
+plt.figure(figsize=(12, 6))
+plt.errorbar(range(len(mean_co2)), mean_co2, yerr=std_co2, fmt='o', ecolor='red', capsize=5, label='Uncertainty')
+plt.xlabel('Test Sample Index')
+plt.ylabel('CO2 Emission (kg)')
+plt.title('CO2 Emission Prediction with Uncertainty Quantification')
+plt.legend()
+plt.tight_layout()
+plt.savefig('/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/MSE_MLs_results/co2_uncertainty.png')
+plt.show()
+
+output_path = '/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/MSE_MLs_results/ml_results_with_augmented_data_and_uncertainty.xlsx'
+results_augmented_df = pd.DataFrame(results_augmented).T
+results_augmented_df.to_excel(output_path, index=True)
+
+fc_mae_values_before = [results_augmented[model]['Fuel Consumption MAE'] for model in models.keys() if model in results_augmented]
+fc_mae_values_after = [results_augmented[model]['Fuel Consumption MAE'] for model in models.keys()]
+models_names = list(models.keys())
+
+plt.figure(figsize=(12, 6))
+plt.bar(models_names, fc_mae_values_before, color='b', alpha=0.6, label='MAE (Before)', width=-0.3, align='edge')
+plt.bar(models_names, fc_mae_values_after, color='g', alpha=0.6, label='MAE (After)', width=0.3, align='edge')
+plt.xlabel('Model')
+plt.ylabel('Mean Absolute Error (MAE)')
+plt.title('Fuel Consumption Prediction Errors (MAE) Before and After Monte Carlo Augmentation')
+plt.legend()
+plt.tight_layout()
+plt.savefig('/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/MSE_MLs_results/fc_mae_comparison.png')
+plt.show()
+
+for name in models.keys():
+    plt.figure(figsize=(12, 6))
+    plt.hist(residuals_augmented['fuel_consumption'][name], bins=30, alpha=0.7, label='Fuel Consumption Residuals', color='blue')
+    plt.hist(residuals_augmented['co2_emission'][name], bins=30, alpha=0.7, label='CO2 Emission Residuals', color='green')
+    plt.xlabel('Residual Value')
+    plt.ylabel('Frequency')
+    plt.title(f'Residual Analysis for {name}')
+    plt.legend()
+    plt.tight_layout()
+    output_residual_path = f'/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/MSE_MLs_results/{name}_residual_analysis.png'
+    plt.savefig(output_residual_path)
+    plt.show()

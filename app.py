@@ -39,7 +39,7 @@ check_password()
 # --- Header and UI Layout ---
 col1, col2 = st.columns([6, 1])
 with col1:
-    st.markdown("<h1 style='margin-bottom: 0;'>\ud83d\udea2 XGB CO\u2082 & Fuel-Consumption Predictor</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-bottom: 0;'> XGB CO\u2082 & Fuel-Consumption Predictor</h1>", unsafe_allow_html=True)
 with col2:
     st.image("AppIcon.png", width=150)
 
@@ -57,6 +57,7 @@ with col4:
         Maritime Research
         </div>
         """, unsafe_allow_html=True)
+
 
 # --- Paths ---
 if getattr(sys, "frozen", False):
@@ -197,3 +198,4 @@ with tab3:
         'Final Predicted CO2 Emission XGB After MC (kg)'
     ]]
     st.dataframe(df, use_container_width=True)
+

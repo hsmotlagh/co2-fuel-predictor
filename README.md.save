@@ -1,0 +1,35 @@
+# 🚢 XGB CO₂ & Fuel-Consumption Predictor
+
+This Streamlit-based web application predicts **fuel consumption (FC)** and **CO₂ emissions** for various ship technical scenarios using an XGBoost regression model, enhanced by Monte Carlo simulations.
+
+---
+
+## 🔐 Login
+
+Access is **restricted** to authorized users.  
+Please contact **Hamid** (project creator) to request login credentials.
+
+---
+
+## 📦 Features
+
+- Interactive input for ship parameters
+- ML-powered predictions (XGBoost)
+- Visual comparison across 5 retrofit scenarios
+- Downloadable prediction reports (Word format)
+- Password protection using `.streamlit/secrets.toml`
+
+---
+
+## 📂 File Structure
+
+```bash
+co2-fuel-predictor/
+├── app.py                      # Streamlit app
+├── README.md                   # This file
+├── requirements.txt            # All Python dependencies
+├── ML_Apply copy.xlsx          # Input data
+├── AppIcon.png                 # App logo
+├── XGB_ML_model/               # Folder with trained .pkl models
+└── .streamlit/
+    └── secrets.toml            # Auth config (not uploaded for privacy)

@@ -1,0 +1,200 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from xgboost import XGBRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error
+import random
+import joblib
+import matplotlib.pyplot as plt
+import tkinter as tk
+from tkinter import simpledialog
+import os
+
+# Define the input and output file paths (Same path for input and output)
+input_output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/ML_Apply.xlsx"
+visualization_output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_4_graphs/Hybrid_XGBoost_Results.png"
+new_excel_output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_4_graphs/ML_Prediction_Results.xlsx"
+
+# Create the new Excel output file if it doesn't exist
+if not os.path.exists(new_excel_output_path):
+    with pd.ExcelWriter(new_excel_output_path, engine='openpyxl') as writer:
+        pass
+
+# List of sheet names to process
+sheet_names = [
+    "Original Scenar_Coeff",
+    "Paint (5%) Scen_Coeff",
+    "Advance Propell_Coeff",
+    "Fin (2%-4%) Sce_Coeff",
+    "Bulbous Bow Sce_Coeff"
+]
+
+# Read the specified sheets from the Excel file
+excel_data = pd.read_excel(input_output_path, sheet_name=sheet_names)
+
+# Required feature columns
+required_columns = [
+    'Pe (kW)',
+    'n (rpm)',
+    'T (kN)',
+    'Hull Efficiency (ηH)',
+    'Propeller Open Water Efficiency (ηO)',
+    'Delivered Power (Pd) (kW)',
+    'Brake Power (PB) (kW)',
+    'Ship Speed (knots)'
+]
+
+# Initialize an Excel writer for saving results
+mse_results = []  # List to store MSE results for each scenario
+visualization_data = []  # Data for visualization
+
+with pd.ExcelWriter(input_output_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+    for sheet_name, data in excel_data.items():
+        print(f"Processing sheet: {sheet_name}")
+        
+        # Check if all required columns are present in the data
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            print(f"Missing columns in sheet {sheet_name}: {missing_columns}")
+            print(f"Available columns: {data.columns.tolist()}")
+            data.to_excel(writer, sheet_name=sheet_name, index=False)
+            continue
+        
+        # Extract relevant features and target variable
+        features = data[required_columns].copy()
+        if 'Fuel Consumption (FC) (kg/h)' not in data.columns or 'CO2 Emission (kg)' not in data.columns:
+            print(f"Target columns 'Fuel Consumption (FC) (kg/h)' or 'CO2 Emission (kg)' not found in sheet {sheet_name}.")
+            data.to_excel(writer, sheet_name=sheet_name, index=False)
+            continue
+        target_fc = data['Fuel Consumption (FC) (kg/h)'].copy()
+        target_co2 = data['CO2 Emission (kg)'].copy()
+        
+        # Feature Engineering: Add additional engineered features
+        features['Ship Speed^2'] = features['Ship Speed (knots)'] ** 2
+        features['Ship Speed^3'] = features['Ship Speed (knots)'] ** 3
+        features['Pd * Hull Efficiency'] = data['Delivered Power (Pd) (kW)'] * data['Hull Efficiency (ηH)']
+        features['Propeller Efficiency * n'] = data['Propeller Open Water Efficiency (ηO)'] * data['n (rpm)']
+
+        # Preprocessing the features - scaling
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(features)
+
+        # Splitting the data into train and test sets
+        X_train_fc, X_test_fc, y_train_fc, y_test_fc = train_test_split(features_scaled, target_fc, test_size=0.2, random_state=42)
+        X_train_co2, X_test_co2, y_train_co2, y_test_co2 = train_test_split(features_scaled, target_co2, test_size=0.2, random_state=42)
+
+        # Define the XGBoost Regressor model
+        xgb_model_fc = XGBRegressor(n_estimators=100, random_state=42)
+        xgb_model_co2 = XGBRegressor(n_estimators=100, random_state=42)
+
+        # Training XGBoost for Fuel Consumption
+        xgb_model_fc.fit(X_train_fc, y_train_fc)
+        # Training XGBoost for CO2 Emission
+        xgb_model_co2.fit(X_train_co2, y_train_co2)
+
+        # Save the models
+        joblib.dump(xgb_model_fc, "xgb_model_fc.pkl")
+        joblib.dump(xgb_model_co2, "xgb_model_co2.pkl")
+
+        # Save the scaler
+        joblib.dump(scaler, "scaler.pkl")
+
+# Function to get user input and predict Fuel Consumption and CO2 Emission
+def user_input_and_predict():
+    # Load the saved models and scaler
+    xgb_model_fc = joblib.load("xgb_model_fc.pkl")
+    xgb_model_co2 = joblib.load("xgb_model_co2.pkl")
+    scaler = joblib.load("scaler.pkl")
+
+    # Initialize the input dialog
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+
+    # Get user inputs
+    pe = float(simpledialog.askstring("Input", "Enter Engine Power (Pe) in kW:"))
+    ship_speed = float(simpledialog.askstring("Input", "Enter Ship Speed (knots):"))
+    hull_efficiency = float(simpledialog.askstring("Input", "Enter Hull Efficiency (ηH):"))
+    propeller_efficiency = float(simpledialog.askstring("Input", "Enter Propeller Open Water Efficiency (ηO):"))
+
+    # Create a DataFrame for prediction
+    user_data = pd.DataFrame({
+        'Pe (kW)': [pe],
+        'n (rpm)': [100],  # Assuming a default value for RPM
+        'T (kN)': [0],  # Default value since no input
+        'Hull Efficiency (ηH)': [hull_efficiency],
+        'Propeller Open Water Efficiency (ηO)': [propeller_efficiency],
+        'Delivered Power (Pd) (kW)': [pe],  # Assuming Delivered Power equals Engine Power for simplicity
+        'Brake Power (PB) (kW)': [0],  # Default value since no input
+        'Ship Speed (knots)': [ship_speed],
+        'Ship Speed^2': [ship_speed ** 2],
+        'Ship Speed^3': [ship_speed ** 3],
+        'Pd * Hull Efficiency': [pe * hull_efficiency],
+        'Propeller Efficiency * n': [propeller_efficiency * 100]  # Assuming a constant RPM of 100 for simplicity
+    })
+
+    # Scale the user input
+    user_data_scaled = scaler.transform(user_data)
+
+    # Make predictions
+    predicted_fc = xgb_model_fc.predict(user_data_scaled)[0]
+    predicted_co2 = xgb_model_co2.predict(user_data_scaled)[0]
+
+    # Display the predictions
+    print(f"Predicted Fuel Consumption (After Monte Carlo): {predicted_fc:.2f} kg/h")
+    print(f"Predicted CO2 Emission (After Monte Carlo): {predicted_co2:.2f} kg")
+
+    # Save the prediction to the new Excel file
+    new_prediction = pd.DataFrame({
+        'Pe (kW)': [pe],
+        'Ship Speed (knots)': [ship_speed],
+        'Hull Efficiency (ηH)': [hull_efficiency],
+        'Propeller Open Water Efficiency (ηO)': [propeller_efficiency],
+        'Predicted Fuel Consumption (kg/h) (After Monte Carlo)': [predicted_fc],
+        'Predicted CO2 Emission (kg) (After Monte Carlo)': [predicted_co2]
+    })
+
+    # Save all results in a single sheet
+    if os.path.exists(new_excel_output_path):
+        existing_data = pd.read_excel(new_excel_output_path, sheet_name='User_Predictions')
+        new_prediction = pd.concat([existing_data, new_prediction], ignore_index=True)
+
+    with pd.ExcelWriter(new_excel_output_path, engine='openpyxl') as writer:
+        new_prediction.to_excel(writer, sheet_name='User_Predictions', index=False)
+
+    # Add the new predictions to the existing graphs
+    plt.figure(figsize=(14, 10))
+
+    # Read existing data from Excel file for comparison
+    for sheet_name in sheet_names:
+        existing_data = pd.read_excel(input_output_path, sheet_name=sheet_name)
+        ship_speed_data = existing_data['Ship Speed (knots)']
+        fc_data = existing_data['Fuel Consumption (FC) (kg/h)']
+        co2_data = existing_data['CO2 Emission (kg)']
+        plt.subplot(2, 1, 1)
+        plt.plot(ship_speed_data, fc_data, linestyle='-', label=f'{sheet_name} - Original FC')
+        plt.subplot(2, 1, 2)
+        plt.plot(ship_speed_data, co2_data, linestyle='-', label=f'{sheet_name} - Original CO2')
+
+    # Plot Fuel Consumption
+    plt.subplot(2, 1, 1)
+    plt.scatter([ship_speed], [predicted_fc], color='red', label='User Prediction (After Monte Carlo)', marker='x')
+    plt.title('Fuel Consumption Prediction Comparison')
+    plt.xlabel('Ship Speed (knots)')
+    plt.ylabel('Fuel Consumption (kg/h)')
+    plt.legend()
+
+    # Plot CO2 Emissions
+    plt.subplot(2, 1, 2)
+    plt.scatter([ship_speed], [predicted_co2], color='blue', label='User Prediction (After Monte Carlo)', marker='x')
+    plt.title('CO2 Emission Prediction Comparison')
+    plt.xlabel('Ship Speed (knots)')
+    plt.ylabel('CO2 Emission (kg)')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig("user_prediction_visualization.png")
+    plt.show()
+
+# Call the function to get user input and predict
+user_input_and_predict()

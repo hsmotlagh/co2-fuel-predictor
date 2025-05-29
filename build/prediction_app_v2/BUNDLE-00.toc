@@ -1,0 +1,3 @@
+([('prediction_app_v2',
+   '/Users/hamid/Documents/CO2 PAPER FINAL/CO2 CODE/dist/prediction_app_v2',
+   'EXECUTABLE')],)

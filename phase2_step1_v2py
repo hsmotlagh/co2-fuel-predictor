@@ -1,0 +1,96 @@
+import numpy as np
+import pandas as pd
+
+# Load input data from Excel file
+input_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_1_graphs/phase1-step1.xlsx"
+output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_2_graphs/phase2-step1.xlsx"
+
+# Load Kt coefficients from 'Coefficients' sheet
+coefficients_data = pd.read_excel(input_path, sheet_name='Coefficients')
+original_kt_coefficients = coefficients_data['Original Kt Coefficients'].values
+advance_kt_coefficients = coefficients_data['Advance Kt Coefficients'].values
+kt_coefficients_dict = {
+    "Original Scenario": original_kt_coefficients,
+    "Paint (5%) Scenario": original_kt_coefficients,
+    "Advance Propeller Scenario": advance_kt_coefficients,
+    "Fin (2%-4%) Scenario": original_kt_coefficients,
+    "Bulbous Bow Scenario": original_kt_coefficients
+}
+
+# Define constants
+density = 1025  # density of water in kg/m^3
+propeller_diameter = 4  # propeller diameter in meters
+
+# Define n (rpm) values for ship speeds 9 to 12.5 and 13 to 15
+n_rpm_values_dict = {
+    "low_speeds": np.arange(50, 180, 10),  # For ship speeds 9 to 12.5
+    "high_speeds": np.arange(100, 230, 10)  # For ship speeds 13 to 15
+}
+
+# Load Va values for each scenario from the Excel file
+scenarios = ["Original Scenario", "Paint (5%) Scenario", "Advance Propeller Scenario", "Fin (2%-4%) Scenario", "Bulbous Bow Scenario"]
+
+# Prepare DataFrame to store results for each scenario and each ship speed
+phase2_step1_results = {}
+
+for scenario in scenarios:
+    # Load Va values from the corresponding sheet in the Excel file
+    try:
+        data = pd.read_excel(input_path, sheet_name=scenario)
+    except ValueError:
+        print(f"Worksheet named '{scenario}' not found in the input file.")
+        continue
+
+    va_values = data['Va (m/s)']
+
+    # Get Kt coefficients for the scenario
+    kt_coefficient_2, kt_coefficient_1, kt_coefficient_0 = kt_coefficients_dict[scenario]
+
+    # Prepare results for the current scenario
+    scenario_results = []
+
+    # Loop through each ship speed and calculate parameters
+    for i, va in enumerate(va_values):
+        ship_speed = data['Ship Speed (knots)'][i]
+        if ship_speed not in [9, 10, 11, 12, 12.5, 13, 13.5, 14, 14.5, 15]:
+            continue  # Only process specific ship speeds
+
+        # Determine appropriate n (rpm) values based on ship speed
+        if ship_speed in [9, 10, 11, 12, 12.5]:
+            n_rpm_values = n_rpm_values_dict["low_speeds"]
+        else:
+            n_rpm_values = n_rpm_values_dict["high_speeds"]
+
+        # Convert rpm to rps
+        n_rps_values = n_rpm_values / 60
+
+        speed_results = []
+        for n_rps in n_rps_values:
+            # Calculate J (advance coefficient) using corrected formula
+            J = va / (n_rps * 4)
+
+            # Calculate Kt using the coefficients from Phase 1, Step 2
+            Kt = J ** 2 * kt_coefficient_2 + J * kt_coefficient_1 + kt_coefficient_0
+
+            # Calculate propeller thrust (T) in kN
+            T = (Kt * density * n_rps ** 2 * propeller_diameter ** 4) / 1000
+
+            # Append the results for this speed
+            speed_results.append([n_rpm_values[np.where(n_rps_values == n_rps)[0][0]], n_rps, J, Kt, T])
+        
+        # Append speed-specific results to scenario results
+        scenario_results.append(speed_results)
+
+    # Store results for the scenario
+    phase2_step1_results[scenario] = scenario_results
+
+# Save Phase 2, Step 1 results to Excel
+with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+    for scenario in scenarios:
+        if scenario not in phase2_step1_results:
+            continue
+        for i, speed_result in enumerate(phase2_step1_results[scenario]):
+            ship_speed = [9, 10, 11, 12, 12.5, 13, 13.5, 14, 14.5, 15][i]
+            sheet_name = f'{scenario[:15]}_S{ship_speed}kn'
+            scenario_df = pd.DataFrame(speed_result, columns=["n (rpm)", "n (rps)", "J", "Kt", "T (kN)"])
+            scenario_df.to_excel(writer, sheet_name=sheet_name, index=False)

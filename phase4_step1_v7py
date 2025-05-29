@@ -1,0 +1,143 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+from docx import Document
+
+# Define file paths
+input_file_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/ML_Apply.xlsx"
+output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_4_graphs"
+
+# Create output directory if it does not exist
+if not os.path.exists(output_path):
+    os.makedirs(output_path)
+
+# List of sheet names to process
+sheet_names = [
+    "Original Scenar_Coeff",
+    "Paint (5%) Scen_Coeff",
+    "Advance Propell_Coeff",
+    "Fin (2%-4%) Sce_Coeff",
+    "Bulbous Bow Sce_Coeff"
+]
+
+# Load the data
+data_sheets = {}
+for sheet in sheet_names:
+    data_sheets[sheet] = pd.read_excel(input_file_path, sheet_name=sheet)
+
+# Analyze and prepare the data
+results = []
+models = ["SVR", "GPR", "RF", "XGB", "NN"]
+
+for sheet_name, df in data_sheets.items():
+    # Extract ship speeds, original fuel consumption, and original CO2 emissions
+    ship_speed = df["Ship Speed (knots)"]
+    original_fc = df["Fuel Consumption (FC) (kg/h)"]
+    original_co2 = df["CO2 Emission (kg)"]
+
+    for model in models:
+        # Extract predictions before and after Monte Carlo simulation
+        fc_before_mc = df[f"Final Predicted Fuel Consumption {model} Before MC (kg/h)"]
+        co2_before_mc = df[f"Final Predicted CO2 Emission {model} Before MC (kg)"]
+        
+        fc_after_mc = df[f"Final Predicted Fuel Consumption {model} After MC (kg/h)"]
+        co2_after_mc = df[f"Final Predicted CO2 Emission {model} After MC (kg)"]
+
+        # Store results
+        results.append({
+            "Scenario": sheet_name,
+            "Model": model,
+            "Ship_Speed": ship_speed,
+            "Original_FC": original_fc,
+            "Original_CO2": original_co2,
+            "FC_Before_MC": fc_before_mc,
+            "CO2_Before_MC": co2_before_mc,
+            "FC_After_MC": fc_after_mc,
+            "CO2_After_MC": co2_after_mc,
+        })
+
+# Convert results to DataFrame
+results_df = pd.DataFrame(results)
+
+# Save analysis results to Excel
+results_file_path = os.path.join(output_path, "ML_Analysis_Results.xlsx")
+results_df.to_excel(results_file_path, index=False)
+
+# Generate visualizations for each Machine Learning model, comparing different scenarios
+for model in models:
+    # Plot Fuel Consumption comparison across scenarios for a specific ML model
+    plt.figure(figsize=(14, 8))
+    for scenario in sheet_names:
+        scenario_data = results_df[(results_df["Scenario"] == scenario) & (results_df["Model"] == model)]
+        ship_speeds = scenario_data.iloc[0]["Ship_Speed"]
+        plt.plot(ship_speeds, scenario_data.iloc[0]["Original_FC"], linestyle='-', color='black', marker='o', label=f'{scenario} - Original FC')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["FC_Before_MC"], linestyle='--', color='blue', marker='s', label=f'{scenario} - FC After ML')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["FC_After_MC"], linestyle='-', color='red', marker='d', label=f'{scenario} - FC After ML + MC')
+    plt.xlabel('Ship Speed (knots)')
+    plt.ylabel('Fuel Consumption (kg/h)')
+    plt.title(f'Fuel Consumption Comparison Across Scenarios for Model {model}')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f"{model}_FC_Comparison.png"))
+    plt.show()
+    plt.close()
+
+    # Plot CO2 Emission comparison across scenarios for a specific ML model
+    plt.figure(figsize=(14, 8))
+    for scenario in sheet_names:
+        scenario_data = results_df[(results_df["Scenario"] == scenario) & (results_df["Model"] == model)]
+        ship_speeds = scenario_data.iloc[0]["Ship_Speed"]
+        plt.plot(ship_speeds, scenario_data.iloc[0]["Original_CO2"], linestyle='-', color='black', marker='o', label=f'{scenario} - Original CO2')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["CO2_Before_MC"], linestyle='--', color='blue', marker='s', label=f'{scenario} - CO2 After ML')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["CO2_After_MC"], linestyle='-', color='red', marker='d', label=f'{scenario} - CO2 After ML + MC')
+    plt.xlabel('Ship Speed (knots)')
+    plt.ylabel('CO2 Emission (kg)')
+    plt.title(f'CO2 Emission Comparison Across Scenarios for Model {model}')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f"{model}_CO2_Comparison.png"))
+    plt.show()
+    plt.close()
+
+# Generate additional visualizations for each Machine Learning model (combined graph for each model)
+for model in models:
+    # Combined Fuel Consumption and CO2 Emission comparison for each ML model across scenarios
+    plt.figure(figsize=(18, 10))
+    for scenario in sheet_names:
+        scenario_data = results_df[(results_df["Scenario"] == scenario) & (results_df["Model"] == model)]
+        ship_speeds = scenario_data.iloc[0]["Ship_Speed"]
+        plt.plot(ship_speeds, scenario_data.iloc[0]["Original_FC"], linestyle='-', color='black', marker='o', label=f'{scenario} - Original Fuel Consumption')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["FC_Before_MC"], linestyle='--', color='blue', marker='s', label=f'{scenario} - Fuel Consumption After ML')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["FC_After_MC"], linestyle='-', color='red', marker='d', label=f'{scenario} - Fuel Consumption After ML + MC')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["Original_CO2"], linestyle='-', color='grey', marker='^', label=f'{scenario} - Original CO2 Emission')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["CO2_Before_MC"], linestyle='--', color='green', marker='p', label=f'{scenario} - CO2 Emission After ML')
+        plt.plot(ship_speeds, scenario_data.iloc[0]["CO2_After_MC"], linestyle='-', color='purple', marker='*', label=f'{scenario} - CO2 Emission After ML + MC')
+    plt.xlabel('Ship Speed (knots)')
+    plt.ylabel('Values (kg/h for FC, kg for CO2)')
+    plt.title(f'Combined Fuel Consumption and CO2 Emission Comparison Across Scenarios for Model {model}')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_path, f"{model}_Combined_Comparison.png"))
+    plt.show()
+    plt.close()
+
+# Generate comprehensive report in Word format
+doc = Document()
+doc.add_heading('Scenarios Performance Report', 0)
+
+for scenario in sheet_names:
+    scenario_data = results_df[results_df["Scenario"] == scenario]
+    
+    doc.add_heading(f"Scenario: {scenario}", level=1)
+    doc.add_paragraph('-' * 50)
+
+    for _, row in scenario_data.iterrows():
+        paragraph = doc.add_paragraph()
+        paragraph.add_run(f"Model: {row['Model']}\n").bold = True
+        paragraph.add_run(f"  Original Fuel Consumption: {row['Original_FC'].mean():.2f}\n")
+        paragraph.add_run(f"  Original CO2 Emission: {row['Original_CO2'].mean():.2f}\n")
+        paragraph.add_run(f"  Fuel Consumption After ML: {row['FC_Before_MC'].mean():.2f}\n")
+        paragraph.add_run(f"  CO2 Emission After ML: {row['CO2_Before_MC'].mean():.2f}\n")
+        paragraph.add_run(f"  Fuel Consumption After ML + MC: {row['FC_After_MC'].mean():.2f}\n")
+        paragraph.add_run(f"  CO2 Emission After ML + MC: {row['CO2_After_MC'].mean():.2f}\n")

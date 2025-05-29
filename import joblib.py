@@ -1,0 +1,25 @@
+import joblib
+from xgboost import XGBRegressor
+
+# Paths to the original model files
+model_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/XGB_ML_model/"
+
+# Load the models
+xgb_model_fc = joblib.load(f"{model_path}xgb_model_fc_combined.pkl")
+xgb_model_co2 = joblib.load(f"{model_path}xgb_model_co2_combined.pkl")
+
+# Re-save the models using XGBoost's save_model method
+xgb_model_fc.save_model(f"{model_path}xgb_model_fc_combined.json")
+xgb_model_co2.save_model(f"{model_path}xgb_model_co2_combined.json")
+
+# Load the models back to ensure compatibility
+xgb_model_fc_new = XGBRegressor()
+xgb_model_co2_new = XGBRegressor()
+xgb_model_fc_new.load_model(f"{model_path}xgb_model_fc_combined.json")
+xgb_model_co2_new.load_model(f"{model_path}xgb_model_co2_combined.json")
+
+# Save the models again using joblib for compatibility
+joblib.dump(xgb_model_fc_new, f"{model_path}xgb_model_fc_combined.pkl")
+joblib.dump(xgb_model_co2_new, f"{model_path}xgb_model_co2_combined.pkl")
+
+print("Models re-saved successfully.")

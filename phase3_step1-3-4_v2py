@@ -1,0 +1,245 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error
+import random
+import joblib
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+
+# Define the input and output file paths (Same path for input and output)
+input_output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/ML_Apply.xlsx"
+visualization_output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/SNN_ML_model/Hybrid_ShallowNN_Results.png"
+
+# List of sheet names to process
+sheet_names = [
+    "Original Scenar_Coeff",
+    "Paint (5%) Scen_Coeff",
+    "Advance Propell_Coeff",
+    "Fin (2%-4%) Sce_Coeff",
+    "Bulbous Bow Sce_Coeff"
+]
+
+# Read the specified sheets from the Excel file
+excel_data = pd.read_excel(input_output_path, sheet_name=sheet_names)
+
+# Required feature columns
+required_columns = [
+    'Pe (kW)',
+    'n (rpm)',
+    'T (kN)',
+    'Hull Efficiency (ηH)',
+    'Propeller Open Water Efficiency (ηO)',
+    'Delivered Power (Pd) (kW)',
+    'Brake Power (PB) (kW)',
+    'Ship Speed (knots)'
+]
+
+# Initialize an Excel writer for saving results
+mse_results = []  # List to store MSE results for each scenario
+visualization_data = []  # Data for visualization
+with pd.ExcelWriter(input_output_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
+    for sheet_name, data in excel_data.items():
+        print(f"Processing sheet: {sheet_name}")
+        
+        # Check if all required columns are present in the data
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            print(f"Missing columns in sheet {sheet_name}: {missing_columns}")
+            print(f"Available columns: {data.columns.tolist()}")
+            data.to_excel(writer, sheet_name=sheet_name, index=False)
+            continue
+        
+        # Extract relevant features and target variable
+        features = data[required_columns].copy()
+        if 'Fuel Consumption (FC) (kg/h)' not in data.columns or 'CO2 Emission (kg)' not in data.columns:
+            print(f"Target columns 'Fuel Consumption (FC) (kg/h)' or 'CO2 Emission (kg)' not found in sheet {sheet_name}.")
+            data.to_excel(writer, sheet_name=sheet_name, index=False)
+            continue
+        target_fc = data['Fuel Consumption (FC) (kg/h)'].copy()
+        target_co2 = data['CO2 Emission (kg)'].copy()
+        ship_speed = data['Ship Speed (knots)'].copy()
+
+        # Attempt to find Delivered Power (Pd) with potential variations in naming
+        possible_pd_columns = ['Pd (kW)', 'Delivered Power (Pd) (kW)', 'Delivered Power']
+        pd_column = None
+        for col in possible_pd_columns:
+            if col in data.columns:
+                pd_column = col
+                break
+
+        if pd_column is None:
+            print(f"Delivered Power column not found in sheet {sheet_name}. Skipping this sheet.")
+            data.to_excel(writer, sheet_name=sheet_name, index=False)
+            continue
+
+        # Physics-Based Prediction as a Baseline (example calculation)
+        physics_based_fc = data[pd_column] * data['Hull Efficiency (ηH)'] * 0.8  # Simplified baseline prediction
+        physics_based_co2 = data[pd_column] * data['Propeller Open Water Efficiency (ηO)'] * 0.5  # Simplified baseline prediction
+
+        # Add physics-based predictions as features using .loc[]
+        features.loc[:, 'Physics-Based FC'] = physics_based_fc
+        features.loc[:, 'Physics-Based CO2'] = physics_based_co2
+
+        # Feature Engineering: Add additional engineered features
+        features['Ship Speed^2'] = features['Ship Speed (knots)'] ** 2
+        features['Ship Speed^3'] = features['Ship Speed (knots)'] ** 3
+        features['Pd * Hull Efficiency'] = data[pd_column] * data['Hull Efficiency (ηH)']
+        features['Propeller Efficiency * n'] = data['Propeller Open Water Efficiency (ηO)'] * data['n (rpm)']
+
+        # Preprocessing the features - scaling
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(features)
+
+        # Splitting the data into train and test sets (Ensure enough samples for meaningful evaluation)
+        if len(features_scaled) < 3:
+            print(f"Not enough samples to perform meaningful evaluation for sheet {sheet_name}. Skipping.")
+            data.to_excel(writer, sheet_name=sheet_name, index=False)
+            continue
+
+        X_train_fc, X_test_fc, y_train_fc, y_test_fc = train_test_split(features_scaled, target_fc, test_size=0.2, random_state=42)
+        X_train_co2, X_test_co2, y_train_co2, y_test_co2 = train_test_split(features_scaled, target_co2, test_size=0.2, random_state=42)
+
+        # Define the Shallow Neural Network (MLPRegressor) model and parameter grid for hyperparameter tuning
+        param_grid = {
+            'hidden_layer_sizes': [(10,), (20,), (10, 10), (20, 20)],
+            'alpha': [0.0001, 0.001, 0.01],
+            'learning_rate': ['constant', 'adaptive'],
+            'max_iter': [2000]
+        }
+
+        # Set up GridSearchCV for hyperparameter tuning
+        grid_search_fc = GridSearchCV(MLPRegressor(random_state=42), param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+        grid_search_co2 = GridSearchCV(MLPRegressor(random_state=42), param_grid, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+
+        # Training Shallow Neural Network for Fuel Consumption
+        grid_search_fc.fit(X_train_fc, y_train_fc)
+        best_nn_model_fc = grid_search_fc.best_estimator_
+        predicted_fc = best_nn_model_fc.predict(features_scaled)
+        mse_fc_before_mc = mean_squared_error(target_fc, predicted_fc)
+
+        # Training Shallow Neural Network for CO2 Emission
+        grid_search_co2.fit(X_train_co2, y_train_co2)
+        best_nn_model_co2 = grid_search_co2.best_estimator_
+        predicted_co2 = best_nn_model_co2.predict(features_scaled)
+        mse_co2_before_mc = mean_squared_error(target_co2, predicted_co2)
+
+        # Monte Carlo Simulation for Data Augmentation
+        augmented_features = features.copy()
+        augmented_target_fc = target_fc.copy()
+        augmented_target_co2 = target_co2.copy()
+        for i in range(5):  # Generate 5 synthetic samples per original data point
+            noise = features.apply(lambda x: x * (1 + random.uniform(-0.05, 0.05)))  # Add ±5% noise
+            augmented_features = pd.concat([augmented_features, noise], ignore_index=True)
+            augmented_target_fc = pd.concat([augmented_target_fc, target_fc], ignore_index=True)
+            augmented_target_co2 = pd.concat([augmented_target_co2, target_co2], ignore_index=True)
+
+        # Preprocessing the augmented features - scaling
+        augmented_features_scaled = scaler.fit_transform(augmented_features)
+
+        # Splitting the augmented data into train and test sets
+        X_train_fc_mc, X_test_fc_mc, y_train_fc_mc, y_test_fc_mc = train_test_split(augmented_features_scaled, augmented_target_fc, test_size=0.2, random_state=42)
+        X_train_co2_mc, X_test_co2_mc, y_train_co2_mc, y_test_co2_mc = train_test_split(augmented_features_scaled, augmented_target_co2, test_size=0.2, random_state=42)
+
+        # Training Shallow Neural Network for Fuel Consumption with Monte Carlo Augmentation
+        best_nn_model_fc.fit(X_train_fc_mc, y_train_fc_mc)
+        predicted_fc_mc = best_nn_model_fc.predict(features_scaled)
+        mse_fc_after_mc = mean_squared_error(target_fc, predicted_fc_mc)
+
+        # Training Shallow Neural Network for CO2 Emission with Monte Carlo Augmentation
+        best_nn_model_co2.fit(X_train_co2_mc, y_train_co2_mc)
+        predicted_co2_mc = best_nn_model_co2.predict(features_scaled)
+        mse_co2_after_mc = mean_squared_error(target_co2, predicted_co2_mc)
+
+        # Store MSE results for each scenario
+        mse_results.append({
+            'Scenario': sheet_name,
+            'MSE Fuel Consumption NN (kg/h) Before MC': mse_fc_before_mc,
+            'MSE Fuel Consumption NN (kg/h) After MC': mse_fc_after_mc,
+            'MSE CO2 Emission NN (kg) Before MC': mse_co2_before_mc,
+            'MSE CO2 Emission NN (kg) After MC': mse_co2_after_mc
+        })
+
+        # Adding final predictions to the data
+        data['Final Predicted Fuel Consumption NN Before MC (kg/h)'] = predicted_fc[:len(data)]
+        data['Final Predicted CO2 Emission NN Before MC (kg)'] = predicted_co2[:len(data)]
+        data['Final Predicted Fuel Consumption NN After MC (kg/h)'] = predicted_fc_mc[:len(data)]
+        data['Final Predicted CO2 Emission NN After MC (kg)'] = predicted_co2_mc[:len(data)]
+
+        # Save the updated data to the same Excel file
+        data.to_excel(writer, sheet_name=sheet_name, index=False)
+
+# Create a DataFrame for the MSE results and write it to a new sheet
+mse_df = pd.DataFrame(mse_results)
+mse_df.to_excel(writer, sheet_name='ML_NN_MSE', index=False)
+
+# Visualization of results
+plt.figure(figsize=(14, 15))
+
+# Plot Fuel Consumption
+plt.subplot(3, 1, 1)
+for scenario, data in zip(mse_results, excel_data.items()):
+    sheet_name, df = data
+    ship_speed = df['Ship Speed (knots)']
+    plt.plot(ship_speed, df['Fuel Consumption (FC) (kg/h)'], label=f"{sheet_name} - Original FC", linestyle=':')
+    plt.plot(ship_speed, df['Final Predicted Fuel Consumption NN Before MC (kg/h)'], label=f"{sheet_name} - Predicted FC Before MC (NN)", linestyle='-')
+    plt.plot(ship_speed, df['Final Predicted Fuel Consumption NN After MC (kg/h)'], label=f"{sheet_name} - Predicted FC After MC (NN)", linestyle='-.')
+plt.title('Fuel Consumption Comparison Before and After Shallow Neural Network (NN) and After Monte Carlo Augmentation')
+plt.xlabel('Ship Speed (knots)')
+plt.ylabel('Fuel Consumption (kg/h)')
+plt.legend()
+
+# Plot CO2 Emissions
+plt.subplot(3, 1, 2)
+for scenario, data in zip(mse_results, excel_data.items()):
+    sheet_name, df = data
+    ship_speed = df['Ship Speed (knots)']
+    plt.plot(ship_speed, df['CO2 Emission (kg)'], label=f"{sheet_name} - Original CO2", linestyle=':')
+    plt.plot(ship_speed, df['Final Predicted CO2 Emission NN Before MC (kg)'], label=f"{sheet_name} - Predicted CO2 Before MC (NN)", linestyle='-')
+    plt.plot(ship_speed, df['Final Predicted CO2 Emission NN After MC (kg)'], label=f"{sheet_name} - Predicted CO2 After MC (NN)", linestyle='-.')
+plt.title('CO2 Emission Comparison Before and After Shallow Neural Network (NN) and After Monte Carlo Augmentation')
+plt.xlabel('Ship Speed (knots)')
+plt.ylabel('CO2 Emission (kg)')
+plt.legend()
+
+plt.tight_layout()
+plt.savefig(visualization_output_path)
+plt.show()
+
+# Individual Scenario Visualizations
+for scenario, data in zip(mse_results, excel_data.items()):
+    sheet_name, df = data
+    ship_speed = df['Ship Speed (knots)']
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(ship_speed, df['Fuel Consumption (FC) (kg/h)'], label=f"{sheet_name} - Original FC", linestyle=':')
+    plt.plot(ship_speed, df['Final Predicted Fuel Consumption NN Before MC (kg/h)'], label=f"{sheet_name} - Predicted FC Before MC (NN)", linestyle='-')
+    plt.plot(ship_speed, df['Final Predicted Fuel Consumption NN After MC (kg/h)'], label=f"{sheet_name} - Predicted FC After MC (NN)", linestyle='-.')
+    plt.title(f'Fuel Consumption Comparison for {sheet_name} using Shallow Neural Network (NN)')
+    plt.xlabel('Ship Speed (knots)')
+    plt.ylabel('Fuel Consumption (kg/h)')
+    plt.legend()
+    plt.tight_layout()
+    individual_output_path = f"/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/SNN_ML_model/{sheet_name}_FC_Comparison_NN.png"
+    plt.savefig(individual_output_path)
+    plt.show()
+    print(f"Fuel Consumption comparison graph saved successfully for {sheet_name} at {individual_output_path}")
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(ship_speed, df['CO2 Emission (kg)'], label=f"{sheet_name} - Original CO2", linestyle=':')
+    plt.plot(ship_speed, df['Final Predicted CO2 Emission NN Before MC (kg)'], label=f"{sheet_name} - Predicted CO2 Before MC (NN)", linestyle='-')
+    plt.plot(ship_speed, df['Final Predicted CO2 Emission NN After MC (kg)'], label=f"{sheet_name} - Predicted CO2 After MC (NN)", linestyle='-.')
+    plt.title(f'CO2 Emission Comparison for {sheet_name} using Shallow Neural Network (NN)')
+    plt.xlabel('Ship Speed (knots)')
+    plt.ylabel('CO2 Emission (kg)')
+    plt.legend()
+    plt.tight_layout()
+    individual_output_path = f"/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/SNN_ML_model/{sheet_name}_CO2_Comparison_NN.png"
+    plt.savefig(individual_output_path)
+    plt.show()
+    print(f"CO2 Emission comparison graph saved successfully for {sheet_name} at {individual_output_path}")

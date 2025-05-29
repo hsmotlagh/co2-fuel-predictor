@@ -1,0 +1,27 @@
+import pandas as pd
+
+# Define the file path and sheet names to read
+input_file_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_2_graphs/phase2-step1.xlsx"
+sheet_names = [
+    "Original Scenar_Coeff",
+    "Paint (5%) Scen_Coeff",
+    "Advance Propell_Coeff",
+    "Fin (2%-4%) Sce_Coeff",
+    "Bulbous Bow Sce_Coeff"
+]
+
+# Read the specified sheets from the Excel file
+excel_data = pd.read_excel(input_file_path, sheet_name=sheet_names)
+
+# Define the output file path
+output_file_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/ML.xlsx"
+
+# Print the results for each sheet and save it to a new Excel file
+with pd.ExcelWriter(output_file_path) as writer:
+    for sheet_name, data in excel_data.items():
+        print(f"Sheet: {sheet_name}")
+        print(data)
+        # Write each sheet to the output Excel file
+        data.to_excel(writer, sheet_name=sheet_name, index=False)
+
+print("Sheets have been read and saved successfully.")

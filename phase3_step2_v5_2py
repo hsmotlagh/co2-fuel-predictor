@@ -1,0 +1,121 @@
+import pandas as pd
+import numpy as np
+import xlsxwriter
+import os
+
+# File paths for input and output
+input_file = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs/performance evaluation .xlsx"
+output_path = "/Users/hamid/Documents/CO2 PAPER FINAL/PHASE_3_graphs"
+output_file = os.path.join(output_path, "ML_Analysis_Results_with_Graphs.xlsx")
+
+# Load the data from the Excel file
+sheet_names = [
+    "Original Scenar_Coeff",
+    "Paint (5%) Scen_Coeff",
+    "Advance Propell_Coeff",
+    "Fin (2%-4%) Sce_Coeff",
+    "Bulbous Bow Sce_Coeff"
+]
+
+# Function to calculate Mean Squared Error (MSE)
+def calculate_mse(true_values, predicted_values):
+    return np.mean((true_values - predicted_values) ** 2)
+
+# Create a new workbook to store data along with interactive charts
+workbook = xlsxwriter.Workbook(output_file)
+
+for sheet_name in sheet_names:
+    # Load the data for the current sheet
+    df = pd.read_excel(input_file, sheet_name=sheet_name)
+
+    # Create a new worksheet for the current sheet
+    worksheet = workbook.add_worksheet(sheet_name)
+
+    # Write the data to the worksheet
+    worksheet.write_row(0, 0, df.columns.tolist())
+    for row_index, row in enumerate(df.itertuples(), start=1):
+        worksheet.write_row(row_index, 0, row[1:])
+
+    # Calculate MSE for different models
+    mse_svr_before_mc = calculate_mse(df['Fuel Consumption (FC) (kg/h)'], df['Final Predicted Fuel Consumption SVR Before MC (kg/h)'])
+    mse_svr_after_mc = calculate_mse(df['Fuel Consumption (FC) (kg/h)'], df['Final Predicted Fuel Consumption SVR After MC (kg/h)'])
+
+    mse_gpr_after_mc = calculate_mse(df['Fuel Consumption (FC) (kg/h)'], df['Final Predicted Fuel Consumption GPR After MC (kg/h)'])
+    mse_xgb_after_mc = calculate_mse(df['Fuel Consumption (FC) (kg/h)'], df['Final Predicted Fuel Consumption XGB After MC (kg/h)'])
+
+    mse_rf_after_mc = calculate_mse(df['Fuel Consumption (FC) (kg/h)'], df['Final Predicted Fuel Consumption RF After MC (kg/h)'])
+    mse_nn_after_mc = calculate_mse(df['Fuel Consumption (FC) (kg/h)'], df['Final Predicted Fuel Consumption NN After MC (kg/h)'])
+
+    # Create charts for SVR, GPR, RF, XGB, and NN analyses based on calculated MSE
+    symbols = ['circle', 'square', 'diamond', 'triangle', 'automatic']  # XlsxWriter-compatible marker symbols
+
+    # SVR MSE Analysis chart
+    svr_mse_chart = workbook.add_chart({'type': 'line'})
+    svr_mse_chart.add_series({
+        'name': 'SVR MSE Before MC',
+        'categories': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'values': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'line': {'dash_type': 'solid'},
+        'marker': {'type': symbols[0], 'size': 6}
+    })
+    svr_mse_chart.add_series({
+        'name': 'SVR MSE After MC',
+        'categories': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'values': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'line': {'dash_type': 'dash'},
+        'marker': {'type': symbols[1], 'size': 6}
+    })
+    svr_mse_chart.set_title({'name': f'SVR MSE Analysis - {sheet_name}'})
+    svr_mse_chart.set_x_axis({'name': 'Ship Speed (knots)'})
+    svr_mse_chart.set_y_axis({'name': 'Mean Squared Error (MSE)'})
+    svr_mse_chart.set_legend({'position': 'bottom'})
+    worksheet.insert_chart('J2', svr_mse_chart)
+
+    # XGBoost vs GPR MSE Performance chart
+    xgb_gpr_chart = workbook.add_chart({'type': 'line'})
+    xgb_gpr_chart.add_series({
+        'name': 'XGBoost MSE',
+        'categories': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'values': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'line': {'dash_type': 'solid'},
+        'marker': {'type': symbols[2], 'size': 6}
+    })
+    xgb_gpr_chart.add_series({
+        'name': 'GPR MSE',
+        'categories': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'values': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'line': {'dash_type': 'dash'},
+        'marker': {'type': symbols[3], 'size': 6}
+    })
+    xgb_gpr_chart.set_title({'name': f'XGBoost vs GPR MSE Performance - {sheet_name}'})
+    xgb_gpr_chart.set_x_axis({'name': 'Ship Speed (knots)'})
+    xgb_gpr_chart.set_y_axis({'name': 'Mean Squared Error (MSE)'})
+    xgb_gpr_chart.set_legend({'position': 'bottom'})
+    worksheet.insert_chart('J30', xgb_gpr_chart)
+
+    # RF and NN MSE Performance chart
+    rf_nn_chart = workbook.add_chart({'type': 'line'})
+    rf_nn_chart.add_series({
+        'name': 'Random Forest MSE',
+        'categories': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'values': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'line': {'dash_type': 'solid'},
+        'marker': {'type': symbols[4], 'size': 6}
+    })
+    rf_nn_chart.add_series({
+        'name': 'Neural Network MSE',
+        'categories': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'values': [worksheet.name, 1, df.columns.get_loc('Ship Speed (knots)'), len(df), df.columns.get_loc('Ship Speed (knots)')],
+        'line': {'dash_type': 'dash'},
+        'marker': {'type': symbols[0], 'size': 6}
+    })
+    rf_nn_chart.set_title({'name': f'RF and NN MSE Performance - {sheet_name}'})
+    rf_nn_chart.set_x_axis({'name': 'Ship Speed (knots)'})
+    rf_nn_chart.set_y_axis({'name': 'Mean Squared Error (MSE)'})
+    rf_nn_chart.set_legend({'position': 'bottom'})
+    worksheet.insert_chart('J58', rf_nn_chart)
+
+# Save and close the workbook
+workbook.close()
+
+print(f"Charts and data saved successfully at: {output_file}")
